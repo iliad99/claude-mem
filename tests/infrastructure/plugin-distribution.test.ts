@@ -643,8 +643,8 @@ describe('Plugin Distribution - Non-blocking bookkeeping hooks (#3206)', () => {
     const context = sessionStart.find((hook: any) => hook.command === 'claude-mem' && hook.args?.join(' ') === 'hook claude-code context');
     const userPromptSubmit = parsed.hooks.UserPromptSubmit[0].hooks[0];
 
-    // start, context, and the ensure-launcher self-heal.
-    expect(sessionStart).toHaveLength(3);
+    // start, context, the ensure-launcher self-heal, and ours: resume-context.
+    expect(sessionStart).toHaveLength(4);
     expect(parsed.hooks.SessionStart[1].matcher).toBe('startup|clear|compact');
     // `start` only prints a status envelope, and the context hook lazily
     // spawns the worker itself, so session start need not wait for it.

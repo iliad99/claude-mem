@@ -321,7 +321,10 @@ export function verifyClaudeCodeRuntimeHooksAreExecForm(parsed, execEntries, ens
           .some((launcherArgs) => isDeepStrictEqual(entry.args, launcherArgs));
         const isEnsureLauncher = entry.command === ensureLauncherExecHook.command
           && isDeepStrictEqual(entry.args, ensureLauncherExecHook.args);
-        if (hasShell || !hasArgs || !(isManifestLauncher || isEnsureLauncher)) {
+        // ours: resume gives the timeline once to a never-injected conversation (plugin/scripts/resume-context.py).
+        const isResumeContext = entry.command === 'python3'
+          && isDeepStrictEqual(entry.args, ['${CLAUDE_PLUGIN_ROOT}/scripts/resume-context.py']);
+        if (hasShell || !hasArgs || !(isManifestLauncher || isEnsureLauncher || isResumeContext)) {
           const offendingDetail = hasShell ? `shell=${JSON.stringify(entry.shell)}`
             : !hasArgs ? 'no args array'
               : isLauncher ? `claude-mem args ${JSON.stringify(entry.args)} that are not in the manifest`

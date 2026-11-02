@@ -58,7 +58,9 @@ describe('plugin/hooks/hooks.json runtime hooks have no shell (#3605)', () => {
       const isLauncher = entry.command === 'claude-mem';
       const isEnsureLauncher = entry.command === 'node'
         && JSON.stringify(entry.args) === JSON.stringify(ENSURE_LAUNCHER_ARGS);
-      expect({ location, isLauncherOrEnsureLauncher: isLauncher || isEnsureLauncher })
+      const isResumeContext = entry.command === 'python3'
+        && JSON.stringify(entry.args) === JSON.stringify(['${CLAUDE_PLUGIN_ROOT}/scripts/resume-context.py']);
+      expect({ location, isLauncherOrEnsureLauncher: isLauncher || isEnsureLauncher || isResumeContext })
         .toEqual({ location, isLauncherOrEnsureLauncher: true });
       for (const text of allStringsIn(entry)) {
         for (const fragment of FORBIDDEN_SHELL_FRAGMENTS) {

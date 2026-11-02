@@ -56,6 +56,19 @@
             "timeout": 180
           }
         ]
+      },
+      {
+        "matcher": "resume",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3",
+            "args": [
+              "${CLAUDE_PLUGIN_ROOT}/scripts/resume-context.py"
+            ],
+            "timeout": 60
+          }
+        ]
       }
     ],
     "UserPromptSubmit": [
