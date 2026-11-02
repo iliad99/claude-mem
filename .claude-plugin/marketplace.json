@@ -1,10 +1,10 @@
 {
-  "name": "thedotmack",
+  "name": "iliad99",
   "owner": {
-    "name": "Alex Newman"
+    "name": "iliad99 (fork of thedotmack/claude-mem)"
   },
   "metadata": {
-    "description": "Plugins by Alex Newman (thedotmack)"
+    "description": "iliad99 fork of claude-mem — teamclaude gateway, local only"
   },
   "plugins": [
     {
@@ -12,12 +12,6 @@
       "version": "15.8.1",
       "source": "./plugin",
       "description": "Persistent memory system for Claude Code - context compression across sessions"
-    },
-    {
-      "name": "claude-mem-cowork",
-      "version": "0.1.4",
-      "source": "./cowork",
-      "description": "Claude-Mem for Cowork (Claude app cloud sessions) - hooks stream tool use to cmem.ai and inject observations into new sessions and agents"
     }
   ]
 }
