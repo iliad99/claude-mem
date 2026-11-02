@@ -89,6 +89,9 @@ export function queryObservationsMulti(
     limit: poolSize(config.totalObservationCount, alpha),
     platformSource,
     projects,
+    // ours: imported auto-memory (`memory ingest`) lives in `manual-` sessions
+    // with no mode concepts; without this it is stored but never injected.
+    includeManualSaves: true,
     excludeSubagents: config.mainAgentOnly,
     withReinforcementDates: alpha > 0,
   });
