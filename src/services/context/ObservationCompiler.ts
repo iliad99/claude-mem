@@ -54,6 +54,7 @@ const PROJECT_KEYS_PER_QUERY = 250;
 function newestUniqueRows<T extends { id: number; created_at_epoch: number }>(batches: T[][], limit: number): T[] {
   const rows = new Map<number, T>();
   for (const batch of batches) for (const row of batch) rows.set(row.id, row);
+  // ponytail: manual priority is not applied when project keys exceed 250; add it if that path needs manual saves.
   return [...rows.values()].sort((a, b) => b.created_at_epoch - a.created_at_epoch).slice(0, limit);
 }
 
@@ -61,6 +62,7 @@ function newestIdsPerProjectKeySql(
   alias: string,
   projectCount: number,
   perKeySql: (keyPredicate: string) => string,
+  orderBy = 'created_at_epoch DESC',
 ): string {
   const parts: string[] = [];
   for (const column of PROJECT_KEY_COLUMNS) {
@@ -70,7 +72,7 @@ function newestIdsPerProjectKeySql(
   }
   return `
     SELECT id FROM (${parts.join(' UNION ')})
-    ORDER BY created_at_epoch DESC
+    ORDER BY ${orderBy}
     LIMIT ?`;
 }
 
@@ -83,7 +85,7 @@ export function queryObservationsMulti(
   // Opt-in ACT-R ranking (CLAUDE_MEM_REINFORCE_ALPHA > 0): fetch a wider
   // recency pool and let re-confirmed older observations climb into the
   // window. With alpha = 0 the pool is exactly the configured count and the
-  // rows come back as queried, i.e. the N most recent.
+  // manual-first selection survives alpha = 0; callers still receive newest-first.
   const alpha = config.reinforcementAlpha ?? 0;
   const pool = queryObservationsNewest(db, config, {
     limit: poolSize(config.totalObservationCount, alpha),
@@ -95,7 +97,10 @@ export function queryObservationsMulti(
     excludeSubagents: config.mainAgentOnly,
     withReinforcementDates: alpha > 0,
   });
-  return rankByStrength(pool, config.totalObservationCount, alpha);
+  // ponytail: alpha > 0 can re-rank manual-first candidates by strength; with
+  // alpha = 0 it leaves their selection order intact. Return order is recency.
+  return rankByStrength(pool, config.totalObservationCount, alpha)
+    .sort((a, b) => b.created_at_epoch - a.created_at_epoch);
 }
 
 /**
@@ -140,6 +145,14 @@ export function queryObservationsNewest(
   const manualClause = options.includeManualSaves
     ? `substr(o.memory_session_id, 1, 7) = 'manual-' OR`
     : '';
+  const newestOrder = options.includeManualSaves
+    ? `(substr(o.memory_session_id, 1, 7) = 'manual-') DESC, o.created_at_epoch DESC`
+    : 'o.created_at_epoch DESC';
+  // ponytail: this computed order loses `_recent` index early-stop (21K synthetic
+  // rows: 1.1ms -> 109ms; largest current project 1,289 rows); split manual picks if it grows.
+  const manualSortColumn = options.includeManualSaves
+    ? `, substr(o.memory_session_id, 1, 7) = 'manual-' AS manual_first`
+    : '';
 
   // #3274: SessionStart injection opts in. The seat INDEX passes `projects`
   // too, and must keep agent-tagged rows. A subagent row carries BOTH agent_id
@@ -174,7 +187,7 @@ export function queryObservationsNewest(
       FROM observations o
       LEFT JOIN sdk_sessions s ON o.memory_session_id = s.memory_session_id
       WHERE ${filterSql}
-      ORDER BY o.created_at_epoch DESC
+      ORDER BY ${newestOrder}
       LIMIT ?
     `);
     try {
@@ -185,12 +198,12 @@ export function queryObservationsNewest(
   }
 
   const winnersSql = newestIdsPerProjectKeySql('o', projects.length, keyPredicate => `
-      SELECT o.id, o.created_at_epoch
+      SELECT o.id, o.created_at_epoch${manualSortColumn}
       FROM observations o
       LEFT JOIN sdk_sessions s ON o.memory_session_id = s.memory_session_id
       WHERE ${keyPredicate} AND ${filterSql}
-      ORDER BY o.created_at_epoch DESC
-      LIMIT ?`);
+      ORDER BY ${newestOrder}
+      LIMIT ?`, options.includeManualSaves ? 'manual_first DESC, created_at_epoch DESC' : undefined);
   const perKeyParams = PROJECT_KEY_COLUMNS.flatMap(() =>
     projects.flatMap(project => [project, ...filterParams, options.limit]));
 
@@ -200,7 +213,7 @@ export function queryObservationsNewest(
     FROM (${winnersSql}) w
     JOIN observations o ON o.id = w.id
     LEFT JOIN sdk_sessions s ON o.memory_session_id = s.memory_session_id
-    ORDER BY o.created_at_epoch DESC
+    ORDER BY ${newestOrder}
   `);
   try {
     return statement.all(...perKeyParams, options.limit) as LocalObservation[];

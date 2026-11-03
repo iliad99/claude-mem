@@ -41,10 +41,10 @@ ${h.stack??""}
       o.created_at,
       o.created_at_epoch,
       o.project
-`,Ht=["project","merged_into_project"],_e=250;function kn(t,e){let r=new Map;for(let n of t)for(let o of n)r.set(o.id,o);return[...r.values()].sort((n,o)=>o.created_at_epoch-n.created_at_epoch).slice(0,e)}function Pn(t,e,r){let n=[];for(let o of Ht)for(let i=0;i<e;i++)n.push(`SELECT * FROM (${r(`${t}.${o} COLLATE NOCASE = ?`)})`);return`
-    SELECT id FROM (${n.join(" UNION ")})
-    ORDER BY created_at_epoch DESC
-    LIMIT ?`}function xn(t,e,r,n){let o=r.reinforcementAlpha??0,i=Nn(t,r,{limit:wn(r.totalObservationCount,o),platformSource:n,projects:e,includeManualSaves:!0,excludeSubagents:r.mainAgentOnly,withReinforcementDates:o>0});return Dn(i,r.totalObservationCount,o)}function Nn(t,e,r){let n=Array.from(e.observationTypes),o=n.map(()=>"?").join(","),i=Array.from(e.observationConcepts),s=i.map(()=>"?").join(","),a=(r.projects??[]).filter(A=>A.trim().length>0);if(a.length>_e){let A=[];for(let P=0;P<a.length;P+=_e)A.push(Nn(t,e,{...r,projects:a.slice(P,P+_e)}));return kn(A,r.limit)}let c=r.includeManualSaves?"substr(o.memory_session_id, 1, 7) = 'manual-' OR":"",l=r.excludeSubagents?`AND ${Mn("o")}`:"",d=r.withReinforcementDates?`,
+`,Ht=["project","merged_into_project"],_e=250;function kn(t,e){let r=new Map;for(let n of t)for(let o of n)r.set(o.id,o);return[...r.values()].sort((n,o)=>o.created_at_epoch-n.created_at_epoch).slice(0,e)}function Pn(t,e,r,n="created_at_epoch DESC"){let o=[];for(let i of Ht)for(let s=0;s<e;s++)o.push(`SELECT * FROM (${r(`${t}.${i} COLLATE NOCASE = ?`)})`);return`
+    SELECT id FROM (${o.join(" UNION ")})
+    ORDER BY ${n}
+    LIMIT ?`}function xn(t,e,r,n){let o=r.reinforcementAlpha??0,i=Nn(t,r,{limit:wn(r.totalObservationCount,o),platformSource:n,projects:e,includeManualSaves:!0,excludeSubagents:r.mainAgentOnly,withReinforcementDates:o>0});return Dn(i,r.totalObservationCount,o).sort((A,P)=>P.created_at_epoch-A.created_at_epoch)}function Nn(t,e,r){let n=Array.from(e.observationTypes),o=n.map(()=>"?").join(","),i=Array.from(e.observationConcepts),s=i.map(()=>"?").join(","),a=(r.projects??[]).filter(A=>A.trim().length>0);if(a.length>_e){let A=[];for(let P=0;P<a.length;P+=_e)A.push(Nn(t,e,{...r,projects:a.slice(P,P+_e)}));return kn(A,r.limit)}let c=r.includeManualSaves?"substr(o.memory_session_id, 1, 7) = 'manual-' OR":"",l=r.excludeSubagents?`AND ${Mn("o")}`:"",d=r.withReinforcementDates?`,
       o.reinforcement_dates`:"",p=`(? IS NULL OR s.platform_source = ?)
       ${l}
       AND (${c} (
@@ -59,21 +59,21 @@ ${h.stack??""}
       FROM observations o
       LEFT JOIN sdk_sessions s ON o.memory_session_id = s.memory_session_id
       WHERE ${p}
-      ORDER BY o.created_at_epoch DESC
+      ORDER BY ${r.includeManualSaves?"(substr(o.memory_session_id, 1, 7) = 'manual-') DESC, o.created_at_epoch DESC":"o.created_at_epoch DESC"}
       LIMIT ?
     `);try{return A.all(...f,r.limit)}finally{A.finalize()}}let E=Pn("o",a.length,A=>`
-      SELECT o.id, o.created_at_epoch
+      SELECT o.id, o.created_at_epoch${r.includeManualSaves?", substr(o.memory_session_id, 1, 7) = 'manual-' AS manual_first":""}
       FROM observations o
       LEFT JOIN sdk_sessions s ON o.memory_session_id = s.memory_session_id
       WHERE ${A} AND ${p}
-      ORDER BY o.created_at_epoch DESC
-      LIMIT ?`),h=Ht.flatMap(()=>a.flatMap(A=>[A,...f,r.limit])),w=t.db.prepare(`
+      ORDER BY ${r.includeManualSaves?"(substr(o.memory_session_id, 1, 7) = 'manual-') DESC, o.created_at_epoch DESC":"o.created_at_epoch DESC"}
+      LIMIT ?`,r.includeManualSaves?"manual_first DESC, created_at_epoch DESC":void 0),h=Ht.flatMap(()=>a.flatMap(A=>[A,...f,r.limit])),w=t.db.prepare(`
     SELECT
       ${vn}${d}
     FROM (${E}) w
     JOIN observations o ON o.id = w.id
     LEFT JOIN sdk_sessions s ON o.memory_session_id = s.memory_session_id
-    ORDER BY o.created_at_epoch DESC
+    ORDER BY ${r.includeManualSaves?"(substr(o.memory_session_id, 1, 7) = 'manual-') DESC, o.created_at_epoch DESC":"o.created_at_epoch DESC"}
   `);try{return w.all(...h,r.limit)}finally{w.finalize()}}function Ft(t,e,r,n){if(e.length===0)return[];let o=r.sessionCount+me;if(e.length>_e){let l=[];for(let d=0;d<e.length;d+=_e)l.push(Ft(t,e.slice(d,d+_e),r,n));return kn(l,o)}let i=[n??null,n??null],s=Pn("ss",e.length,l=>`
       SELECT ss.id, ss.created_at_epoch
       FROM session_summaries ss

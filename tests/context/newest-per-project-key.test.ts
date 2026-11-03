@@ -4,7 +4,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { SessionStore } from '../../src/services/sqlite/SessionStore.js';
-import { queryObservationsMulti, querySummariesMulti } from '../../src/services/context/ObservationCompiler.js';
+import { queryObservationsMulti, queryObservationsNewest, querySummariesMulti } from '../../src/services/context/ObservationCompiler.js';
 import type { ContextConfig } from '../../src/services/context/types.js';
 
 // SessionStart reads the newest N rows per project key from the v63
@@ -37,6 +37,16 @@ function seed(store: SessionStore, project: string, title: string, createdAtEpoc
   }, 1, 0, createdAtEpoch);
   store.storeSummary(memorySessionId, project, {
     request: title, investigated: 'i', learned: 'l', completed: 'c', next_steps: 'n', notes: null,
+  }, 1, 0, createdAtEpoch);
+}
+
+function seedManual(store: SessionStore, project: string, title: string, createdAtEpoch: number): void {
+  const memorySessionId = `manual-${title}`;
+  const sessionDbId = store.createSDKSession(`content-${title}`, project, 'prompt', undefined, 'claude');
+  store.ensureMemorySessionIdRegistered(sessionDbId, memorySessionId);
+  store.storeObservation(memorySessionId, project, {
+    type: 'discovery', title, subtitle: null, facts: [], narrative: 'n',
+    concepts: [], files_read: [], files_modified: [],
   }, 1, 0, createdAtEpoch);
 }
 
@@ -110,7 +120,7 @@ describe('SessionStart newest rows per project key (v63)', () => {
       for (const { sql, params } of [...captured]) {
         expect((sql.match(/ UNION /g) ?? []).length).toBeLessThan(500);
         const plan = (store.db.query(`EXPLAIN QUERY PLAN ${sql}`).all(...(params as [])) as Array<{ detail: string }>).map(row => row.detail).join('\n');
-        expect(plan).toContain(sql.includes('FROM observations o') ? 'idx_observations_project_nocase_recent' : 'idx_summaries_project_nocase_recent');
+        expect(plan).toContain(sql.includes('FROM observations o') ? 'idx_observations_project_nocase' : 'idx_summaries_project_nocase_recent');
       }
     } finally { store.close(); }
   });
@@ -124,10 +134,48 @@ describe('SessionStart newest rows per project key (v63)', () => {
     const plans = captured.map(({ sql, params }) =>
       (store.db.query(`EXPLAIN QUERY PLAN ${sql}`).all(...(params as [])) as Array<{ detail: string }>)
         .map(row => row.detail).join('\n'));
-    expect(plans[0]).toContain('idx_observations_project_nocase_recent');
-    expect(plans[0]).toContain('idx_observations_merged_into_nocase_recent');
+    expect(plans[0]).toContain('idx_observations_project_nocase');
+    expect(plans[0]).toContain('idx_observations_merged_into_nocase');
     expect(plans[1]).toContain('idx_summaries_project_nocase_recent');
     expect(plans[1]).toContain('idx_summaries_merged_into_nocase_recent');
+  });
+
+  it('puts included manual saves ahead of newer observations in both newest paths', () => {
+    const store = new SessionStore(':memory:');
+    try {
+      seed(store, 'manual-priority', 'AUTO_NEWEST', 5_000);
+      seed(store, 'manual-priority', 'AUTO_MID', 4_000);
+      seed(store, 'manual-priority', 'AUTO_OLD', 3_000);
+      seedManual(store, 'manual-priority', 'MANUAL_NEWER', 2_000);
+      seedManual(store, 'manual-priority', 'MANUAL_OLDER', 1_000);
+
+      const manualOptions = { limit: 2, includeManualSaves: true };
+      expect(queryObservationsNewest(store, config, manualOptions).map(row => row.title))
+        .toEqual(['MANUAL_NEWER', 'MANUAL_OLDER']);
+      expect(queryObservationsNewest(store, config, { ...manualOptions, projects: ['manual-priority'] }).map(row => row.title))
+        .toEqual(['MANUAL_NEWER', 'MANUAL_OLDER']);
+      expect(queryObservationsNewest(store, config, { limit: 2, includeManualSaves: false }).map(row => row.title))
+        .toEqual(['AUTO_NEWEST', 'AUTO_MID']);
+      expect(querySummariesMulti(store, ['manual-priority'], config).map(row => row.request))
+        .toEqual(['AUTO_NEWEST', 'AUTO_MID']);
+    } finally { store.close(); }
+  });
+
+  it('selects manual saves across projects, then returns the selected rows newest first', () => {
+    const store = new SessionStore(':memory:');
+    try {
+      seedManual(store, 'project-a', 'MANUAL_A_NEWER', 2_000);
+      seedManual(store, 'project-a', 'MANUAL_A_OLDER', 1_000);
+      seed(store, 'project-b', 'AUTO_B_NEWEST', 5_000);
+
+      // Selection is manual-first even when another project has newer auto rows.
+      expect(queryObservationsMulti(store, ['project-a', 'project-b'], { ...config, totalObservationCount: 2 })
+        .map(row => row.title)).toEqual(['MANUAL_A_NEWER', 'MANUAL_A_OLDER']);
+
+      // Consumers use the first returned row as the most recent observation.
+      expect(queryObservationsMulti(store, ['project-a', 'project-b'], { ...config, totalObservationCount: 3 })
+        .map(row => row.created_at_epoch)).toEqual([5_000, 2_000, 1_000]);
+    } finally { store.close(); }
   });
 });
 

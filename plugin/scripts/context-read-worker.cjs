@@ -216,10 +216,10 @@ ${g.stack??""}
       o.created_at,
       o.created_at_epoch,
       o.project
-`,Er=["project","merged_into_project"],De=250;function Po(t,e){let r=new Map;for(let n of t)for(let o of n)r.set(o.id,o);return[...r.values()].sort((n,o)=>o.created_at_epoch-n.created_at_epoch).slice(0,e)}function xo(t,e,r){let n=[];for(let o of Er)for(let s=0;s<e;s++)n.push(`SELECT * FROM (${r(`${t}.${o} COLLATE NOCASE = ?`)})`);return`
-    SELECT id FROM (${n.join(" UNION ")})
-    ORDER BY created_at_epoch DESC
-    LIMIT ?`}function Uo(t,e,r,n){let o=r.reinforcementAlpha??0,s=Fo(t,r,{limit:Do(r.totalObservationCount,o),platformSource:n,projects:e,includeManualSaves:!0,excludeSubagents:r.mainAgentOnly,withReinforcementDates:o>0});return vo(s,r.totalObservationCount,o)}function Fo(t,e,r){let n=Array.from(e.observationTypes),o=n.map(()=>"?").join(","),s=Array.from(e.observationConcepts),i=s.map(()=>"?").join(","),a=(r.projects??[]).filter(A=>A.trim().length>0);if(a.length>De){let A=[];for(let b=0;b<a.length;b+=De)A.push(Fo(t,e,{...r,projects:a.slice(b,b+De)}));return Po(A,r.limit)}let c=r.includeManualSaves?"substr(o.memory_session_id, 1, 7) = 'manual-' OR":"",l=r.excludeSubagents?`AND ${Co("o")}`:"",d=r.withReinforcementDates?`,
+`,Er=["project","merged_into_project"],De=250;function Po(t,e){let r=new Map;for(let n of t)for(let o of n)r.set(o.id,o);return[...r.values()].sort((n,o)=>o.created_at_epoch-n.created_at_epoch).slice(0,e)}function xo(t,e,r,n="created_at_epoch DESC"){let o=[];for(let i of Er)for(let s=0;s<e;s++)o.push(`SELECT * FROM (${r(`${t}.${i} COLLATE NOCASE = ?`)})`);return`
+    SELECT id FROM (${o.join(" UNION ")})
+    ORDER BY ${n}
+    LIMIT ?`}function Uo(t,e,r,n){let o=r.reinforcementAlpha??0,s=Fo(t,r,{limit:Do(r.totalObservationCount,o),platformSource:n,projects:e,includeManualSaves:!0,excludeSubagents:r.mainAgentOnly,withReinforcementDates:o>0});return vo(s,r.totalObservationCount,o).sort((A,b)=>b.created_at_epoch-A.created_at_epoch)}function Fo(t,e,r){let n=Array.from(e.observationTypes),o=n.map(()=>"?").join(","),s=Array.from(e.observationConcepts),i=s.map(()=>"?").join(","),a=(r.projects??[]).filter(A=>A.trim().length>0);if(a.length>De){let A=[];for(let b=0;b<a.length;b+=De)A.push(Fo(t,e,{...r,projects:a.slice(b,b+De)}));return Po(A,r.limit)}let c=r.includeManualSaves?"substr(o.memory_session_id, 1, 7) = 'manual-' OR":"",l=r.excludeSubagents?`AND ${Co("o")}`:"",d=r.withReinforcementDates?`,
       o.reinforcement_dates`:"",p=`(? IS NULL OR s.platform_source = ?)
       ${l}
       AND (${c} (
@@ -234,21 +234,21 @@ ${g.stack??""}
       FROM observations o
       LEFT JOIN sdk_sessions s ON o.memory_session_id = s.memory_session_id
       WHERE ${p}
-      ORDER BY o.created_at_epoch DESC
+      ORDER BY ${r.includeManualSaves?"(substr(o.memory_session_id, 1, 7) = 'manual-') DESC, o.created_at_epoch DESC":"o.created_at_epoch DESC"}
       LIMIT ?
     `);try{return A.all(...m,r.limit)}finally{A.finalize()}}let E=xo("o",a.length,A=>`
-      SELECT o.id, o.created_at_epoch
+      SELECT o.id, o.created_at_epoch${r.includeManualSaves?", substr(o.memory_session_id, 1, 7) = 'manual-' AS manual_first":""}
       FROM observations o
       LEFT JOIN sdk_sessions s ON o.memory_session_id = s.memory_session_id
       WHERE ${A} AND ${p}
-      ORDER BY o.created_at_epoch DESC
-      LIMIT ?`),g=Er.flatMap(()=>a.flatMap(A=>[A,...m,r.limit])),M=t.db.prepare(`
+      ORDER BY ${r.includeManualSaves?"(substr(o.memory_session_id, 1, 7) = 'manual-') DESC, o.created_at_epoch DESC":"o.created_at_epoch DESC"}
+      LIMIT ?`,r.includeManualSaves?"manual_first DESC, created_at_epoch DESC":void 0),g=Er.flatMap(()=>a.flatMap(A=>[A,...m,r.limit])),M=t.db.prepare(`
     SELECT
       ${Lo}${d}
     FROM (${E}) w
     JOIN observations o ON o.id = w.id
     LEFT JOIN sdk_sessions s ON o.memory_session_id = s.memory_session_id
-    ORDER BY o.created_at_epoch DESC
+    ORDER BY ${r.includeManualSaves?"(substr(o.memory_session_id, 1, 7) = 'manual-') DESC, o.created_at_epoch DESC":"o.created_at_epoch DESC"}
   `);try{return M.all(...g,r.limit)}finally{M.finalize()}}function $o(t,e,r){if(e.length===0)return 0;let n=e.map(()=>"?").join(","),o=t.db.prepare(`
     SELECT COUNT(*) as count
     FROM observations o
